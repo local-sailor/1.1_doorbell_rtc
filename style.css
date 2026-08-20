@@ -230,6 +230,25 @@ h1 {
   margin: 2px;
 }
 
+.host-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.host-key-row {
+  margin-top: 4px;
+}
+
+.close-room-row {
+  border-top: 1px solid #eee;
+  margin: 12px auto 0;
+  max-width: 360px;
+  padding-top: 12px;
+}
+
 #host-key-btn {
   background-color: #188038;
 }
@@ -244,6 +263,12 @@ h1 {
 
 #close-room-btn:hover {
   background-color: #8f1d18;
+}
+
+@media (max-width: 600px) {
+  .host-tool-row button {
+    width: 100%;
+  }
 }
 
 .copy-link-modal {
