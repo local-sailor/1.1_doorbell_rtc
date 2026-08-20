@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     stopRingAlert(elements);
   }
 
-  function markRoomClosed() {
+  function markRoomClosed(options = {}) {
     state.isRoomClosed = true;
     state.connected = false;
     stopRingBecauseUserResponded();
@@ -128,6 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
       state.eventSource.close();
       state.eventSource = null;
     }
+
+    if (options.prepareFreshHostRoom) {
+      createFreshStoredRoom();
+    }
+
     showClosedRoomView(elements);
   }
 
@@ -454,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.closeRoomBtn.disabled = true;
       elements.closeRoomBtn.textContent = 'Closing...';
       await closeRoom(state.roomId);
-      markRoomClosed();
+      markRoomClosed({ prepareFreshHostRoom: true });
     } catch (error) {
       alert(`Could not close room: ${error.message}`);
       elements.closeRoomBtn.disabled = false;
