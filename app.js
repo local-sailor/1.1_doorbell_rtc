@@ -552,7 +552,13 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.closeRoomBtn.addEventListener('click', closeCurrentRoom);
   }
 
+  let isStartingFreshRoom = false;
   elements.startOwnRoomBtn.addEventListener('click', () => {
+    if (isStartingFreshRoom) return;
+
+    isStartingFreshRoom = true;
+    elements.startOwnRoomBtn.disabled = true;
+    elements.startOwnRoomBtn.textContent = 'Starting fresh room...';
     createFreshStoredRoom();
     window.location.href = window.location.pathname;
   });
