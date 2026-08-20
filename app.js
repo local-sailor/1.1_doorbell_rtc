@@ -30,6 +30,7 @@ import {
   setConnectionView,
   setPhotoButtonsBusy,
   setSoundButtonEnabled,
+  showCopyLinkModal,
   showPhotoModal,
   showQRCode,
   showClosedRoomView,
@@ -414,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await navigator.clipboard.writeText(hostKeyLink);
         alert('Host key copied to clipboard.');
       } catch {
-        alert(`Copy this host key link manually:\n${hostKeyLink}`);
+        showCopyLinkModal(hostKeyLink, 'Host key link');
       }
     } catch (error) {
       alert(`Could not create host key: ${error.message}`);

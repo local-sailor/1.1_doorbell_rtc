@@ -162,6 +162,53 @@ export function showPhotoModal(blob) {
   };
 }
 
+export function showCopyLinkModal(link, title = 'Copy Link') {
+  const modal = document.createElement('div');
+  modal.className = 'copy-link-modal';
+  modal.innerHTML = `
+    <div class="copy-link-dialog">
+      <p>${title}</p>
+      <input type="text" readonly value="${link}" aria-label="${title}" />
+      <div class="copy-link-actions">
+        <button type="button" class="copy-link-copy-btn">Copy</button>
+        <button type="button" class="copy-link-close-btn">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const input = modal.querySelector('input');
+  const copyBtn = modal.querySelector('.copy-link-copy-btn');
+  const closeBtn = modal.querySelector('.copy-link-close-btn');
+
+  const selectLink = () => {
+    input.focus();
+    input.select();
+  };
+
+  const close = () => {
+    modal.remove();
+  };
+
+  copyBtn.addEventListener('click', async () => {
+    selectLink();
+    try {
+      await navigator.clipboard.writeText(link);
+      copyBtn.textContent = 'Copied';
+    } catch {
+      document.execCommand('copy');
+      copyBtn.textContent = 'Selected';
+    }
+  });
+
+  closeBtn.addEventListener('click', close);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) close();
+  });
+
+  window.setTimeout(selectLink, 0);
+}
+
 export function setConnectionView(elements, state, onShowPhoto) {
   if (state.isVisitor) {
     setVisitorControlsEnabled(elements, state.connected);
