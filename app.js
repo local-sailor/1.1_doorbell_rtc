@@ -1,6 +1,7 @@
 import {
   createFreshStoredRoom,
   createInitialState,
+  getHostKeyLink,
   getShareableLink,
   getStoredMessages,
   isVisitorSender,
@@ -8,10 +9,13 @@ import {
 } from './model.js';
 import {
   createRoomEventSource,
+  closeRoom,
   fetchPhoto,
+  requestHostKey,
   sendKeepAlive,
   sendRoomEvent,
-  uploadPhoto
+  uploadPhoto,
+  validateHostKey
 } from './api.js';
 import { createDoorbellAudio } from './audio.js';
 import {
@@ -28,6 +32,7 @@ import {
   setSoundButtonEnabled,
   showPhotoModal,
   showQRCode,
+  showClosedRoomView,
   showStopRingButton,
   stopRingAlert
 } from './view.js';
@@ -41,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const HEADER_ENLARGE_DURATION_MS = 2000;
 
   state.statusEl = statusEl;
-  configureInitialView(elements, state, getShareableLink(state.roomId));
+  configureInitialView(elements, state, state.roomId ? getShareableLink(state.roomId) : '');
 
   function updateConnection(isConnected) {
     state.connected = isConnected;
@@ -60,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function keepHostAwake(force = false) {
-    if (state.isVisitor) return;
+    if (state.isVisitor || state.isRoomClosed || !state.roomId) return;
 
     const now = Date.now();
     if (!force && now - state.lastKeepAliveAt < 30_000) return;
@@ -76,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function startHostKeepAlive() {
-    if (state.isVisitor || state.keepAliveInterval) return;
+    if (state.isVisitor || state.keepAliveInterval || !state.roomId) return;
 
     keepHostAwake(true);
     state.keepAliveInterval = window.setInterval(keepHostAwake, KEEP_ALIVE_INTERVAL_MS);
@@ -113,6 +118,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function stopRingBecauseUserResponded() {
     audio.stopRingSequence();
     stopRingAlert(elements);
+  }
+
+  function markRoomClosed() {
+    state.isRoomClosed = true;
+    state.connected = false;
+    stopRingBecauseUserResponded();
+    if (state.eventSource) {
+      state.eventSource.close();
+      state.eventSource = null;
+    }
+    showClosedRoomView(elements);
   }
 
   function playRingSequence(frequencies, options = {}) {
@@ -197,8 +213,14 @@ document.addEventListener('DOMContentLoaded', () => {
       data.type !== 'ring' &&
       data.type !== 'photo' &&
       data.type !== 'photo-removed' &&
-      data.type !== 'photo-expired'
+      data.type !== 'photo-expired' &&
+      data.type !== 'room-closed'
     ) {
+      return;
+    }
+
+    if (data.type === 'room-closed') {
+      markRoomClosed();
       return;
     }
 
@@ -243,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function connectToRoom() {
+    if (!state.roomId || state.isRoomClosed) return;
     if (state.eventSource) state.eventSource.close();
 
     updateConnection(false);
@@ -266,6 +289,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function sendMessage(text) {
+    if (state.isRoomClosed) {
+      alert('This room has been closed.');
+      return;
+    }
+
     if (!state.connected) {
       alert('Not connected yet - please wait');
       return;
@@ -279,6 +307,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function sendRing(variant = 'doorbell') {
+    if (state.isRoomClosed) {
+      alert('This room has been closed.');
+      return;
+    }
+
     const now = Date.now();
     if (now < state.ringCooldownUntil) return;
 
@@ -314,6 +347,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function uploadCurrentPhoto(file) {
+    if (state.isRoomClosed) {
+      alert('This room has been closed.');
+      return;
+    }
     if (!state.connected || !file) return;
 
     if (file.size > 6 * 1024 * 1024) {
@@ -354,6 +391,75 @@ document.addEventListener('DOMContentLoaded', () => {
       .finally(() => {
         window.location.href = window.location.pathname;
       });
+  }
+
+  async function copyHostKey() {
+    if (!state.roomId || state.isRoomClosed) return;
+
+    const password = window.prompt('Set host key password. It can be blank.');
+    if (password === null) return;
+
+    try {
+      elements.hostKeyBtn.disabled = true;
+      elements.hostKeyBtn.textContent = 'Copying...';
+      const hostKey = await requestHostKey(state.roomId, password);
+      const hostKeyLink = getHostKeyLink(hostKey);
+
+      try {
+        await navigator.clipboard.writeText(hostKeyLink);
+        alert('Host key copied to clipboard.');
+      } catch {
+        alert(`Copy this host key link manually:\n${hostKeyLink}`);
+      }
+    } catch (error) {
+      alert(`Could not create host key: ${error.message}`);
+    } finally {
+      elements.hostKeyBtn.disabled = false;
+      elements.hostKeyBtn.textContent = 'Copy Host Key';
+    }
+  }
+
+  async function unlockHostKeyRoom() {
+    const password = window.prompt('Enter host key password. It may be blank.');
+    if (password === null) return false;
+
+    try {
+      const roomId = await validateHostKey(state.hostKeyFromUrl, password);
+      state.roomId = roomId;
+      state.isVisitor = false;
+      state.photoSender = 'host';
+      state.eventSender = 'host';
+      localStorage.setItem('doorbellRoomId', roomId);
+      history.replaceState({}, '', window.location.pathname);
+
+      const link = getShareableLink(roomId);
+      elements.linkDisplay.textContent = link;
+      showQRCode(link);
+      return true;
+    } catch (error) {
+      if (error.message === 'Room closed') {
+        markRoomClosed();
+      } else {
+        alert(`Host key failed: ${error.message}`);
+      }
+      return false;
+    }
+  }
+
+  async function closeCurrentRoom() {
+    if (!state.roomId || state.isRoomClosed) return;
+    if (!window.confirm('Close this rooBell room? Visitors with the old QR/link will no longer be able to join.')) return;
+
+    try {
+      elements.closeRoomBtn.disabled = true;
+      elements.closeRoomBtn.textContent = 'Closing...';
+      await closeRoom(state.roomId);
+      markRoomClosed();
+    } catch (error) {
+      alert(`Could not close room: ${error.message}`);
+      elements.closeRoomBtn.disabled = false;
+      elements.closeRoomBtn.textContent = 'Close Room';
+    }
   }
 
   function exitCurrentRoom() {
@@ -436,7 +542,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!state.isVisitor) {
     elements.generateBtn.addEventListener('click', generateNewHostRoom);
+    elements.hostKeyBtn.addEventListener('click', copyHostKey);
+    elements.closeRoomBtn.addEventListener('click', closeCurrentRoom);
   }
+
+  elements.startOwnRoomBtn.addEventListener('click', () => {
+    createFreshStoredRoom();
+    window.location.href = window.location.pathname;
+  });
 
   elements.sendBtn.addEventListener('click', () => {
     const text = elements.messageInput.value.trim();
@@ -512,6 +625,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     enableSoundQuietly();
     elements.startSection.classList.add('is-starting');
-    window.setTimeout(enterApp, 220);
+    window.setTimeout(async () => {
+      if (state.isHostKeyEntry) {
+        const unlocked = await unlockHostKeyRoom();
+        elements.startSection.classList.remove('is-starting');
+        if (!unlocked) return;
+      }
+      enterApp();
+    }, 220);
   });
 });

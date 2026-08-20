@@ -3,8 +3,12 @@ export function getElements() {
     startSection: document.getElementById('start-section'),
     startBtn: document.getElementById('start-btn'),
     startPrompt: document.getElementById('start-prompt'),
+    closedRoomSection: document.getElementById('closed-room-section'),
+    startOwnRoomBtn: document.getElementById('start-own-room-btn'),
     generateBtn: document.getElementById('generate-btn'),
+    hostKeyBtn: document.getElementById('host-key-btn'),
     printQrBtn: document.getElementById('print-qr-btn'),
+    closeRoomBtn: document.getElementById('close-room-btn'),
     linkDisplay: document.getElementById('link-display'),
     homeownerSection: document.getElementById('homeowner-section'),
     visitorSection: document.getElementById('visitor-section'),
@@ -196,6 +200,7 @@ export function showStopRingButton(elements) {
 export function enterAppView(elements, isVisitor) {
   document.body.classList.add('app-started');
   elements.startSection.style.display = 'none';
+  elements.closedRoomSection.style.display = 'none';
   elements.soundSection.style.display = 'block';
 
   if (isVisitor) {
@@ -212,7 +217,11 @@ export function enterAppView(elements, isVisitor) {
 }
 
 export function configureInitialView(elements, state, shareableLink) {
-  elements.startPrompt.textContent = state.isVisitor ? 'Join rooBell' : 'Start rooBell';
+  elements.startPrompt.textContent = state.isHostKeyEntry
+    ? 'Unlock Host Key'
+    : state.isVisitor
+      ? 'Join rooBell'
+      : 'Start rooBell';
   elements.startBtn.setAttribute('aria-label', elements.startPrompt.textContent);
   document.body.classList.add(state.isVisitor ? 'visitor-mode' : 'host-mode');
 
@@ -227,6 +236,18 @@ export function configureInitialView(elements, state, shareableLink) {
   elements.visitorStatusEl.style.display = 'none';
   elements.linkDisplay.textContent = shareableLink;
   showQRCode(shareableLink);
+}
+
+export function showClosedRoomView(elements) {
+  document.body.classList.add('app-started');
+  elements.startSection.style.display = 'none';
+  elements.visitorSection.style.display = 'none';
+  elements.soundSection.style.display = 'none';
+  elements.homeownerSection.style.display = 'none';
+  elements.hostJumpRow.style.display = 'none';
+  elements.hostBackRow.style.display = 'none';
+  elements.closedRoomSection.style.display = 'block';
+  elements.startOwnRoomBtn.style.display = 'inline-block';
 }
 
 export function resizeImage(file, maxWidth, quality) {

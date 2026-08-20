@@ -10,6 +10,49 @@ export async function sendRoomEvent(roomId, payload) {
   }
 }
 
+export async function requestHostKey(roomId, password) {
+  const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/host-key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || 'Could not create host key');
+  }
+
+  return body.hostKey;
+}
+
+export async function validateHostKey(hostKey, password) {
+  const response = await fetch('/api/host-key/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostKey, password })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || 'Could not validate host key');
+  }
+
+  return body.roomId;
+}
+
+export async function closeRoom(roomId) {
+  const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || 'Could not close room');
+  }
+}
+
 export function createRoomEventSource(roomId) {
   return new EventSource(`/api/rooms/${encodeURIComponent(roomId)}/events`);
 }

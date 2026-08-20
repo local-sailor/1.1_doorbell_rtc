@@ -7,14 +7,24 @@ export function generateRoomId() {
 
 export function getShareableLink(roomId) {
   const url = new URL(window.location.href);
+  url.search = '';
   url.searchParams.set('room', roomId);
+  return url.toString();
+}
+
+export function getHostKeyLink(hostKey) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('hostKey', hostKey);
   return url.toString();
 }
 
 export function createInitialState() {
   const urlParams = new URLSearchParams(window.location.search);
+  const hostKeyFromUrl = urlParams.get('hostKey');
   const roomFromUrl = urlParams.get('room');
-  const isVisitor = Boolean(roomFromUrl);
+  const isHostKeyEntry = Boolean(hostKeyFromUrl);
+  const isVisitor = Boolean(roomFromUrl) && !isHostKeyEntry;
   let photoSender = isVisitor ? 'visitor' : 'host';
 
   if (isVisitor) {
@@ -26,14 +36,21 @@ export function createInitialState() {
     photoSender = `visitor-${visitorId}`;
   }
 
-  const roomId = roomFromUrl || localStorage.getItem('doorbellRoomId') || generateRoomId();
-  localStorage.setItem('doorbellRoomId', roomId);
+  const roomId = isHostKeyEntry
+    ? null
+    : roomFromUrl || localStorage.getItem('doorbellRoomId') || generateRoomId();
+  if (roomId) {
+    localStorage.setItem('doorbellRoomId', roomId);
+  }
 
   return {
     roomId,
     isVisitor,
+    isHostKeyEntry,
+    hostKeyFromUrl,
     photoSender,
     eventSender: isVisitor ? 'visitor' : 'host',
+    isRoomClosed: false,
     connected: false,
     ringCooldownUntil: 0,
     eventSource: null,

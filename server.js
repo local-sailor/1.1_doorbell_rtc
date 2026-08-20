@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const PUBLIC_DIR = __dirname;
 const rooms = new Map();
+const hostKeys = new Map();
 const MAX_ROOM_HISTORY = 50;
 
 const contentTypes = {
@@ -64,10 +65,24 @@ function getRoomClients(roomId) {
       clients: new Set(),
       history: [],
       photos: {},  // sender -> {data, mime, uploadedAt}  e.g. 'host' or 'visitor-abc123'
-      photoExpiries: {}  // sender -> timeout
+      photoExpiries: {},  // sender -> timeout
+      hostKey: null,
+      hostPasswordHash: null,
+      closed: false
     });
   }
   return rooms.get(roomId);
+}
+
+function createHostKey() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashPassword(password = '') {
+  return crypto
+    .createHash('sha256')
+    .update(String(password))
+    .digest('hex');
 }
 
 function broadcast(roomId, data) {
@@ -91,6 +106,7 @@ function handleKeepAlive(roomId, res) {
     ok: true,
     room: roomId,
     clients: room.clients.size,
+    closed: room.closed,
     serverTime: new Date().toISOString()
   });
 }
@@ -98,6 +114,7 @@ function handleKeepAlive(roomId, res) {
 function addRoomPhoto(roomId, sender, dataUrl) {
   const room = rooms.get(roomId);
   if (!room) return;
+  if (room.closed) return;
 
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl);
   if (!match) return;
@@ -208,6 +225,10 @@ function handleEventStream(roomId, req, res) {
   const room = getRoomClients(roomId);
   room.clients.add(res);
 
+  if (room.closed) {
+    res.write(`data: ${JSON.stringify({ type: 'room-closed' })}\n\n`);
+  }
+
   for (const message of room.history) {
     res.write(`data: ${JSON.stringify(message)}\n\n`);
   }
@@ -256,6 +277,12 @@ function readJsonBody(req, maxBytes = 20000) {
 
 async function handlePostEvent(roomId, req, res) {
   try {
+    const room = getRoomClients(roomId);
+    if (room.closed) {
+      sendJson(res, 410, { error: 'Room closed' });
+      return;
+    }
+
     const data = await readJsonBody(req);
     const sender = data.sender === 'host' ? 'host' : 'visitor';
     const allowedTypes = new Set(['message', 'presence', 'ring']);
@@ -279,6 +306,89 @@ async function handlePostEvent(roomId, req, res) {
     });
 
     sendJson(res, 202, { ok: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+}
+
+async function handleHostKeyRequest(roomId, req, res) {
+  try {
+    const data = await readJsonBody(req);
+    const room = getRoomClients(roomId);
+
+    if (room.closed) {
+      sendJson(res, 410, { error: 'Room closed' });
+      return;
+    }
+
+    if (!room.hostKey) {
+      room.hostKey = createHostKey();
+      hostKeys.set(room.hostKey, roomId);
+    }
+
+    room.hostPasswordHash = hashPassword(data.password || '');
+
+    sendJson(res, 200, {
+      ok: true,
+      hostKey: room.hostKey
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+}
+
+async function handleHostKeyValidation(req, res) {
+  try {
+    const data = await readJsonBody(req);
+    const hostKey = typeof data.hostKey === 'string' ? data.hostKey : '';
+    const roomId = hostKeys.get(hostKey);
+
+    if (!roomId) {
+      sendJson(res, 403, { error: 'Invalid host key' });
+      return;
+    }
+
+    const room = getRoomClients(roomId);
+    if (room.closed) {
+      sendJson(res, 410, { error: 'Room closed' });
+      return;
+    }
+
+    if (room.hostPasswordHash !== hashPassword(data.password || '')) {
+      sendJson(res, 403, { error: 'Incorrect password' });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      roomId
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+}
+
+async function handleCloseRoom(roomId, req, res) {
+  try {
+    const room = getRoomClients(roomId);
+    await readJsonBody(req).catch(() => ({}));
+
+    room.closed = true;
+    room.history = [];
+    room.photos = {};
+
+    for (const timeout of Object.values(room.photoExpiries)) {
+      clearTimeout(timeout);
+    }
+    room.photoExpiries = {};
+
+    broadcast(roomId, {
+      id: crypto.randomUUID(),
+      type: 'room-closed',
+      sentAt: new Date().toISOString()
+    });
+
+    sendJson(res, 200, { ok: true });
   } catch (error) {
     sendJson(res, 400, { error: error.message });
   }
@@ -325,8 +435,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const eventMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/events$/);
   const keepAliveMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/keepalive$/);
+  const hostKeyMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/host-key$/);
+  const closeRoomMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/close$/);
 
-  if (url.pathname === '/health') {
+  if (url.pathname === '/health' || url.pathname === '/healthz') {
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -341,10 +453,30 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (hostKeyMatch && req.method === 'POST') {
+    handleHostKeyRequest(decodeURIComponent(hostKeyMatch[1]), req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/host-key/validate' && req.method === 'POST') {
+    handleHostKeyValidation(req, res);
+    return;
+  }
+
+  if (closeRoomMatch && req.method === 'POST') {
+    handleCloseRoom(decodeURIComponent(closeRoomMatch[1]), req, res);
+    return;
+  }
+
   // Photo upload
   const photoMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/photo$/);
   if (photoMatch && req.method === 'POST') {
     const roomId = decodeURIComponent(photoMatch[1]);
+    const room = getRoomClients(roomId);
+    if (room.closed) {
+      sendJson(res, 410, { error: 'Room closed' });
+      return;
+    }
     handlePhotoUpload(roomId, req, res);
     return;
   }

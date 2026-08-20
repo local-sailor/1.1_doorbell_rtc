@@ -92,6 +92,7 @@ h1 {
 
 /* Panels */
 #start-section,
+#closed-room-section,
 #homeowner-section,
 #visitor-section {
   background: white;
@@ -109,6 +110,17 @@ h1 {
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+#closed-room-section {
+  text-align: center;
+}
+
+#closed-room-section p {
+  color: #333;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 14px;
 }
 
 .start-logo {
@@ -216,6 +228,22 @@ h1 {
   font-size: 12px;
   padding: 6px 10px;
   margin: 2px;
+}
+
+#host-key-btn {
+  background-color: #188038;
+}
+
+#host-key-btn:hover {
+  background-color: #146c2e;
+}
+
+#close-room-btn {
+  background-color: #b3261e;
+}
+
+#close-room-btn:hover {
+  background-color: #8f1d18;
 }
 
 #host-jump-row,
