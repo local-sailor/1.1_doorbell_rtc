@@ -253,15 +253,15 @@ h1 {
 }
 
 #close-room-btn {
-  background-color: white;
-  border: 1px solid #e6b8b3;
-  color: #b3261e;
+  background-color: #b3261e;
+  border: none;
+  color: white;
   font-size: 13px;
   padding: 7px 12px;
 }
 
 #close-room-btn:hover {
-  background-color: #fceeee;
+  background-color: #8f1d18;
 }
 
 @media (max-width: 600px) {
