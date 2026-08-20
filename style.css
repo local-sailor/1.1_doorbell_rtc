@@ -235,18 +235,13 @@ h1 {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
-  margin-bottom: 8px;
-}
-
-.host-key-row {
-  margin-top: 4px;
+  margin-bottom: 18px;
 }
 
 .close-room-row {
-  border-top: 1px solid #eee;
-  margin: 12px auto 0;
-  max-width: 360px;
-  padding-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 #host-key-btn {
@@ -258,16 +253,24 @@ h1 {
 }
 
 #close-room-btn {
-  background-color: #b3261e;
+  background-color: white;
+  border: 1px solid #e6b8b3;
+  color: #b3261e;
+  font-size: 13px;
+  padding: 7px 12px;
 }
 
 #close-room-btn:hover {
-  background-color: #8f1d18;
+  background-color: #fceeee;
 }
 
 @media (max-width: 600px) {
   .host-tool-row button {
     width: 100%;
+  }
+
+  .close-room-row {
+    justify-content: center;
   }
 }
 
