@@ -166,10 +166,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     flashRingAlert();
     const played = isWaitingRing
-      ? playRingSequence([880, 660], { repeatForMs: 0, toneDuration: 0.18, gap: 0.05 })
+      ? playRingSequence([659.25, 783.99], {
+          repeatForMs: 0,
+          toneDuration: 0.24,
+          gap: 0.045,
+          peakGain: 0.32,
+          brightness: 0.55,
+          vibrationPattern: [120]
+        })
       : data.sender === 'host'
-        ? playRingSequence([784, 988, 784], { repeatForMs: 20_000, intervalMs: 2500, toneDuration: 0.2, gap: 0.06 })
-        : playRingSequence([659, 523, 659, 523], { repeatForMs: 20_000, intervalMs: 3000, toneDuration: 0.22, gap: 0.07 });
+        ? playRingSequence([659.25, 783.99, 987.77], {
+            repeatForMs: 20_000,
+            intervalMs: 2800,
+            toneDuration: 0.3,
+            gap: 0.055,
+            peakGain: 0.4,
+            brightness: 0.82,
+            vibrationPattern: [180, 90, 180]
+          })
+        : playRingSequence([783.99, 659.25], {
+            repeatForMs: 20_000,
+            intervalMs: 3000,
+            toneDuration: 0.42,
+            gap: 0.075,
+            peakGain: 0.42,
+            brightness: 0.68,
+            vibrationPattern: [220, 100, 320]
+          });
 
     if (!played) {
       elements.enableSoundBtn.textContent = 'Enable Sound for Ring';

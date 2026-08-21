@@ -2,6 +2,8 @@ export function createDoorbellAudio() {
   let audioContext = null;
   let activeRingInterval = null;
   let activeRingTimeout = null;
+  let activeVibrationInterval = null;
+  let activeVibrationTimeout = null;
   let soundWasEnabled = false;
   let lastBellPlay = 0;
   const activeOscillators = new Set();
@@ -55,6 +57,63 @@ export function createDoorbellAudio() {
     return true;
   }
 
+  function playChime(frequencies, options = {}) {
+    if (!audioContext || audioContext.state !== 'running') return false;
+
+    const duration = options.toneDuration || 0.32;
+    const gap = options.gap || 0.08;
+    const peakGain = options.peakGain || 0.38;
+    const brightness = options.brightness || 0.7;
+    const now = audioContext.currentTime;
+    const compressor = audioContext.createDynamicsCompressor();
+    const output = audioContext.createGain();
+
+    compressor.threshold.setValueAtTime(-18, now);
+    compressor.knee.setValueAtTime(16, now);
+    compressor.ratio.setValueAtTime(4, now);
+    compressor.attack.setValueAtTime(0.004, now);
+    compressor.release.setValueAtTime(0.22, now);
+    output.gain.setValueAtTime(0.9, now);
+    compressor.connect(output);
+    output.connect(audioContext.destination);
+
+    frequencies.forEach((frequency, index) => {
+      const start = now + index * (duration + gap);
+      const end = start + duration;
+      const partials = [
+        { ratio: 1, level: 1, type: 'sine' },
+        { ratio: 2, level: 0.2 * brightness, type: 'sine' },
+        { ratio: 3.01, level: 0.06 * brightness, type: 'sine' }
+      ];
+
+      partials.forEach((partial) => {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const partialPeak = peakGain * partial.level;
+
+        oscillator.type = partial.type;
+        oscillator.frequency.setValueAtTime(frequency * partial.ratio * 1.012, start);
+        oscillator.frequency.exponentialRampToValueAtTime(frequency * partial.ratio, start + 0.035);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(partialPeak, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(partialPeak * 0.34, start + duration * 0.28);
+        gain.gain.exponentialRampToValueAtTime(0.0001, end);
+
+        oscillator.connect(gain);
+        gain.connect(compressor);
+        activeOscillators.add(oscillator);
+        oscillator.addEventListener('ended', () => {
+          activeOscillators.delete(oscillator);
+        });
+        oscillator.start(start);
+        oscillator.stop(end + 0.03);
+      });
+    });
+
+    return true;
+  }
+
   async function playHappyBell() {
     const now = Date.now();
     if (now - lastBellPlay < 300) return;
@@ -92,6 +151,20 @@ export function createDoorbellAudio() {
       activeRingTimeout = null;
     }
 
+    if (activeVibrationInterval) {
+      window.clearInterval(activeVibrationInterval);
+      activeVibrationInterval = null;
+    }
+
+    if (activeVibrationTimeout) {
+      window.clearTimeout(activeVibrationTimeout);
+      activeVibrationTimeout = null;
+    }
+
+    if (navigator.vibrate) {
+      navigator.vibrate(0);
+    }
+
     for (const oscillator of activeOscillators) {
       try {
         oscillator.stop();
@@ -101,21 +174,43 @@ export function createDoorbellAudio() {
     activeOscillators.clear();
   }
 
+  function playVibrationSequence(pattern, repeatForMs, intervalMs) {
+    if (!navigator.vibrate) return false;
+
+    navigator.vibrate(pattern);
+
+    if (repeatForMs <= intervalMs) return true;
+
+    activeVibrationInterval = window.setInterval(() => {
+      navigator.vibrate(pattern);
+    }, intervalMs);
+
+    activeVibrationTimeout = window.setTimeout(() => {
+      if (activeVibrationInterval) {
+        window.clearInterval(activeVibrationInterval);
+        activeVibrationInterval = null;
+      }
+      activeVibrationTimeout = null;
+      navigator.vibrate(0);
+    }, repeatForMs);
+
+    return true;
+  }
+
   function playRingSequence(frequencies, options = {}, onRepeat = () => {}) {
     const repeatForMs = options.repeatForMs || 0;
     const intervalMs = options.intervalMs || 3000;
-    const toneDuration = options.toneDuration || 0.16;
-    const gap = options.gap || 0.08;
-    const peakGain = options.peakGain || 0.85;
-    const waveform = options.waveform || 'square';
+    const vibrationIntervalMs = options.vibrationIntervalMs || intervalMs;
+    const vibrationPattern = options.vibrationPattern || [180, 80, 180];
 
     stopRingSequence();
-    const played = playTone(frequencies, toneDuration, gap, peakGain, waveform);
+    const played = playChime(frequencies, options);
+    playVibrationSequence(vibrationPattern, repeatForMs, vibrationIntervalMs);
 
     if (repeatForMs <= intervalMs) return played;
 
     activeRingInterval = window.setInterval(() => {
-      playTone(frequencies, toneDuration, gap, peakGain, waveform);
+      playChime(frequencies, options);
       onRepeat();
     }, intervalMs);
 
